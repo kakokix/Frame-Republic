@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-VERSION     = "1.0.5"
+VERSION     = "1.0.6"
 VERSION_URL = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/version.json"
 UPDATE_URL  = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py"
 NW        = 0x08000000
@@ -832,14 +832,15 @@ class App(tk.Tk):
         # Boutons fenetre
         wb = tk.Frame(bar, bg=PANEL)
         wb.place(relx=1, rely=0, anchor="ne")
-        for sym,col_h,cmd in [
-            ("  -  ", CARD_H,  self._minimize),
-            ("  o  ", CARD_H,  self._toggle_max),
-            ("  x  ", RED,     self._quit),
+        for sym,col_h,cmd,attr in [
+            ("  -  ", CARD_H,  self._minimize,    None),
+            ("  o  ", CARD_H,  self._toggle_max,  "_max_btn_lbl"),
+            ("  x  ", RED,     self._quit,         None),
         ]:
             lb = tk.Label(wb, text=sym, font=("Segoe UI",10,"bold"),
                           bg=PANEL, fg=T2, cursor="hand2")
             lb.pack(side="left", ipady=12, ipadx=3)
+            if attr: setattr(self, attr, lb)
             ch = col_h
             lb.bind("<Enter>", lambda e, w=lb, c=ch: w.config(bg=c, fg=WHITE))
             lb.bind("<Leave>", lambda e, w=lb: w.config(bg=PANEL, fg=T2))
@@ -890,15 +891,17 @@ class App(tk.Tk):
 
     def _toggle_max(self, _=None):
         if self._maximized:
-            self.geometry(self._norm_geo); self._maximized = False
+            self.overrideredirect(True)
+            self.geometry(self._norm_geo)
+            self._maximized = False
+            self._max_btn_lbl.config(text="  o  ")
         else:
             self._norm_geo = self.geometry()
-            sw = self.winfo_screenwidth()
-            sh = self.winfo_screenheight()
-            # Use workarea height (minus taskbar ~40px)
-            self.geometry("{}x{}+0+0".format(sw, sh - 40))
+            # Maximize propre: enlever overrideredirect, maximiser, remettre
+            self.overrideredirect(False)
+            self.state("zoomed")
             self._maximized = True
-        # Force layout update
+            self._max_btn_lbl.config(text="  _  ")
         self.update_idletasks()
 
     # ================================================================
@@ -1328,6 +1331,12 @@ class App(tk.Tk):
         dict(id="mem_mgmt",      title="Optimisation memoire",      desc1="Ajuste les parametres de pagination.",      fn=self._do_memory_mgmt,                                                    initial=True),
         dict(id="msi",           title="Interruptions MSI",         desc1="Active MSI pour GPU et reseau.",            fn=self._do_msi),
         dict(id="timer",         title="Timer systeme",             desc1="Ameliore la precision des timers.",         fn=self._do_timer),
+        dict(id="hdd_optim",     title="Optimisation disque dur",   desc1="Defrag SSD desactive, trim active.",        desc2="Prolonge la duree de vie du SSD.",          fn=self._do_hdd),
+        dict(id="notif_gaming",  title="Notifications jeu off",     desc1="Bloque les notifications pendant les jeux.",desc2="Aucune interruption en pleine partie.",      fn=self._do_gaming_notifs,   initial=True),
+        dict(id="usb_poll",      title="USB polling rate",          desc1="Augmente la frequence de scrutation USB.",  desc2="Souris et clavier plus reactifs.",           fn=self._do_usb_poll),
+        dict(id="hpet_off",      title="Desactiver HPET",          desc1="Desactive le High Precision Event Timer.",  desc2="Reduit la latence CPU en jeu.",              fn=self._do_hpet),
+        dict(id="startup_delay", title="Delai demarrage reduit",    desc1="Supprime le delai de demarrage Windows.",   desc2="Boot plus rapide.",                          fn=self._do_startup_delay,   initial=True),
+        dict(id="paging_exec",   title="Kernel en RAM",             desc1="Garde le noyau Windows en memoire vive.",   desc2="Reduit les acces disque systeme.",           fn=self._do_paging_exec,     initial=True),
     ]
 
     def _jeu_cards(self): return [
@@ -1340,6 +1349,11 @@ class App(tk.Tk):
         dict(id="affinity",    title="Affinite CPU",                desc1="Repartit sur tous les coeurs.",       soon=True),
         dict(id="msi_irq",     title="Interruptions MSI GPU",       desc1="Optimise les IRQ.",                   soon=True),
         dict(id="nvidia_opt",  title="GPU NVIDIA",                  desc1="Reglages NVIDIA performants.",        soon=True),
+        dict(id="fs_optim",    title="Fullscreen optimise",         desc1="Force le mode exclusif plein ecran.",  desc2="Reduit l'input lag.",                  fn=self._do_fullscreen_opt, initial=True),
+        dict(id="ram_gaming",  title="RAM gaming mode",             desc1="Optimise l'utilisation memoire.",      desc2="Reduit les stutters en jeu.",          fn=self._do_ram_gaming,     initial=True),
+        dict(id="shader_pre",  title="Pre-compilation shaders",     desc1="Force la compilation des shaders.",    desc2="Moins de microstutters au lancement.", fn=self._do_shader_precomp),
+        dict(id="cpu_park",    title="Desactiver CPU parking",      desc1="Maintient tous les coeurs actifs.",    desc2="Pas de latence au reveil des coeurs.", fn=self._do_cpu_unpark,     initial=True),
+        dict(id="hw_accel",    title="Acceleration GPU Windows",    desc1="Active HAGS (Hardware Accelerated).",  desc2="Reduit la latence GPU sur Windows 11.",fn=self._do_hags),
     ]
 
     def _build_startup(self, p):
@@ -1384,7 +1398,12 @@ class App(tk.Tk):
             dict(id="br_telem",     title="Telemetrie navigateurs",   desc1="Chrome et Edge.",                     fn=self._do_browser_telem,   initial=True),
             dict(id="find_dev",     title="Find My Device",           desc1="Desactive le suivi.",                 fn=self._do_find_device,     initial=True),
             dict(id="win_search",   title="Recherche Windows",        desc1="Reduit l'indexation.",                fn=self._do_win_search,      initial=True),
-            dict(id="copilot2",     title="Copilot IA",               desc1="Desactive Microsoft Copilot.",        fn=self._do_copilot,         initial=True),
+            dict(id="copilot2",     title="Copilot IA",               desc1="Desactive Microsoft Copilot.",          fn=self._do_copilot,          initial=True),
+        dict(id="diag_track",   title="DiagTrack service",        desc1="Arrete le service de telemetrie.",       fn=self._do_diagtrack,        initial=True),
+        dict(id="compat_telem", title="Telemetrie compatibilite", desc1="Desactive WerSvc et WerMgr.",            fn=self._do_compat_telem,     initial=True),
+        dict(id="app_compat",   title="Compatibilite applis",     desc1="Desactive la couche de compatibilite.",  fn=self._do_app_compat),
+        dict(id="cloud_content",title="Contenus cloud Windows",   desc1="Desactive les suggestions cloud.",       fn=self._do_cloud_content,    initial=True),
+        dict(id="smart_screen", title="SmartScreen reduit",       desc1="Reduit les envois SmartScreen.",         fn=self._do_smartscreen,      initial=True),
         ])
 
     def _build_page_reseau(self):
@@ -1473,7 +1492,12 @@ class App(tk.Tk):
                 dict(id="explorer",   title="Explorateur optimise",  desc1="Affiche extensions et caches.",      fn=self._do_explorer,    initial=True),
                 dict(id="start_snd",  title="Son demarrage off",     desc1="Supprime le son au boot.",           fn=self._do_start_sound, initial=True),
                 dict(id="numlock",    title="NumLock auto",          desc1="Active le pave numerique.",          fn=self._do_numlock,     initial=True),
-                dict(id="hibernate",  title="Desactiver hibernation",desc1="Libere hiberfil.sys (4-32 Go).",     fn=self._do_hibernate),
+                dict(id="hibernate",    title="Desactiver hibernation", desc1="Libere hiberfil.sys (4-32 Go).",        fn=self._do_hibernate),
+        dict(id="focus_assist", title="Focus Assist",          desc1="Bloque les distractions en mode focus.",  fn=self._do_focus_assist),
+        dict(id="clipboard_h",  title="Historique presse-papier",desc1="Active l historique multi-elements.",   fn=self._do_clipboard,        initial=True),
+        dict(id="snap_windows", title="Snap Windows ameliore", desc1="Meilleur ancrage des fenetres.",          fn=self._do_snap,             initial=True),
+        dict(id="virtual_desk", title="Bureaux virtuels rapides",desc1="Navigation rapide entre bureaux.",      fn=self._do_vdesk),
+        dict(id="scrolling",    title="Defilement inactif",    desc1="Scroll dans fenetres en arriere-plan.",   fn=self._do_inactive_scroll,  initial=True),
             ])
         ]
         if LAPTOP:
@@ -2467,6 +2491,145 @@ class App(tk.Tk):
             else: self._stat_lbls["bat"].config(text="N/A")
         except: pass
         self.after(2000,self._poll)
+
+    # ── Nouvelles optimisations perf ───────────────────────────────
+    def _do_hdd(self, state=True):
+        if state:
+            run("fsutil behavior set disablelastaccess 1")
+            run("fsutil behavior set encryptpagingfile 0")
+            ps("Get-ScheduledTask -TaskName *Defrag* | "
+               "Disable-ScheduledTask -ErrorAction SilentlyContinue")
+        else:
+            run("fsutil behavior set disablelastaccess 0")
+
+    def _do_gaming_notifs(self, state=True):
+        import winreg as wr
+        reg_set(wr.HKEY_CURRENT_USER,
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings",
+                "NOC_GLOBAL_SETTING_TOASTS_ENABLED", 0 if state else 1)
+        reg_set(wr.HKEY_CURRENT_USER,
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\PushNotifications",
+                "ToastEnabled", 0 if state else 1)
+
+    def _do_usb_poll(self, state=True):
+        val = "0" if state else "1"
+        reg_set(winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Services\HidUsb\Parameters",
+                "PollInterval", 1 if state else 8)
+
+    def _do_hpet(self, state=True):
+        if state:
+            run("bcdedit /deletevalue useplatformclock")
+            run("bcdedit /set useplatformtick yes")
+        else:
+            run("bcdedit /set useplatformclock true")
+
+    def _do_startup_delay(self, state=True):
+        reg_set(winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize",
+                "StartupDelayInMSec", 0 if state else 10000)
+
+    def _do_paging_exec(self, state=True):
+        reg_set(winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management",
+                "DisablePagingExecutive", 1 if state else 0)
+
+    # ── Nouvelles optimisations jeu ────────────────────────────────
+    def _do_fullscreen_opt(self, state=True):
+        reg_set(winreg.HKEY_CURRENT_USER,
+                r"System\GameConfigStore",
+                "GameDVR_DXGIHonorFSEWindowsCompatible", 1 if state else 0)
+        reg_set(winreg.HKEY_CURRENT_USER,
+                r"System\GameConfigStore",
+                "GameDVR_FSEBehavior", 2 if state else 0)
+
+    def _do_ram_gaming(self, state=True):
+        reg_set(winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management",
+                "LargeSystemCache", 0)
+        reg_set(winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile",
+                "SystemResponsiveness", 0 if state else 20)
+
+    def _do_shader_precomp(self, state=True):
+        reg_set(winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\DirectX\UserGpuPreferences",
+                "DirectXUserGlobalSettings", "VRROptimizeEnable=0;" if state else "")
+
+    def _do_cpu_unpark(self, state=True):
+        v = "0" if state else "100"
+        run("powercfg /setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES " + ("100" if not state else "0"))
+        run("powercfg /setactive SCHEME_CURRENT")
+
+    def _do_hags(self, state=True):
+        reg_set(winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Control\GraphicsDrivers",
+                "HwSchMode", 2 if state else 1)
+
+    # ── Nouvelles optimisations confidentialite ────────────────────
+    def _do_diagtrack(self, state=True):
+        sc = "disabled" if state else "auto"
+        run("sc config DiagTrack start= " + sc)
+        if state: run("sc stop DiagTrack")
+
+    def _do_compat_telem(self, state=True):
+        for svc in ["WerSvc", "wercplsupport"]:
+            sc = "disabled" if state else "demand"
+            run("sc config " + svc + " start= " + sc)
+            if state: run("sc stop " + svc)
+
+    def _do_app_compat(self, state=True):
+        reg_set(winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Policies\Microsoft\Windows\AppCompat",
+                "DisablePCA", 1 if state else 0)
+
+    def _do_cloud_content(self, state=True):
+        reg_set(winreg.HKEY_CURRENT_USER,
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager",
+                "SubscribedContent-338388Enabled", 0 if state else 1)
+        reg_set(winreg.HKEY_CURRENT_USER,
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager",
+                "SubscribedContent-353694Enabled", 0 if state else 1)
+
+    def _do_smartscreen(self, state=True):
+        reg_set(winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Policies\Microsoft\Windows\System",
+                "EnableSmartScreen", 0 if state else 1)
+
+    # ── Nouvelles optimisations confort ───────────────────────────
+    def _do_focus_assist(self, state=True):
+        reg_set(winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
+                "FocusAssistEnabled", 1 if state else 0)
+
+    def _do_clipboard(self, state=True):
+        reg_set(winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Policies\Microsoft\Windows\System",
+                "AllowClipboardHistory", 1 if state else 0)
+        if state:
+            ps("Set-ItemProperty -Path "
+               "'HKCU:\\Software\\Microsoft\\Clipboard' "
+               "-Name EnableClipboardHistory -Value 1 "
+               "-ErrorAction SilentlyContinue")
+
+    def _do_snap(self, state=True):
+        reg_set(winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
+                "SnapAssist", 1 if state else 0)
+        reg_set(winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
+                "EnableSnapBar", 1 if state else 0)
+
+    def _do_vdesk(self, state=True):
+        reg_set(winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
+                "VirtualDesktopTaskbarFilter", 1 if state else 0)
+
+    def _do_inactive_scroll(self, state=True):
+        reg_set(winreg.HKEY_CURRENT_USER,
+                r"Control Panel\Desktop",
+                "MouseWheelRouting", 2 if state else 0)
+
 
     # ================================================================
     #  EFFETS VISUELS  (animations low-poly)
