@@ -1,4 +1,4 @@
-name: Build FrameRepublic EXE
+name: Build EXE
 
 on:
   push:
@@ -7,34 +7,24 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    - name: Install dependencies
-      run: |
-        pip install pyinstaller psutil
+    - name: Installer dependances
+      run: pip install pyinstaller psutil
 
-    - name: Build EXE
-      run: |
-        pyinstaller --onefile --windowed --name FrameRepublic --icon=NONE frame_republic.py
+    - name: Compiler EXE
+      run: pyinstaller --onefile --windowed --name FrameRepublic frame_republic.py
 
-    - name: Upload EXE as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: FrameRepublic-EXE
-        path: dist/FrameRepublic.exe
-
-    - name: Create Release
+    - name: Publier la release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: auto-${{ github.run_number }}
-        name: "Frame Republic - Build ${{ github.run_number }}"
+        tag_name: v${{ github.run_number }}
+        name: Frame Republic v${{ github.run_number }}
         files: dist/FrameRepublic.exe
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
