@@ -1,5 +1,5 @@
 {
-  "version": "1.0.4",
+  "version": "1.0.5",
   "url": "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py",
-  "notes": "Version initiale"
+  "notes": "Effets visuels, particules low-poly, animations sidebar, corrections reseau hors-ligne"
 }
