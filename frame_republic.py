@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-VERSION     = "1.0.0"
+VERSION     = "1.0.4"
 VERSION_URL = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/version.json"
 UPDATE_URL  = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py"
 NW        = 0x08000000
@@ -120,23 +120,39 @@ P1      = "#0c0e1a"   # poly fonce
 P2      = "#0f1220"   # poly moyen
 P3      = "#131628"   # poly clair
 
+# Police principale - detection automatique
+# Bahnschrift = Windows 10/11 natif, geometrique, futuriste
+# Rajdhani = installe via Windows Update sur certains systemes
+# Fallback -> Segoe UI
+
+def _detect_font():
+    """Detecte la meilleure police low-poly disponible."""
+    try:
+        import tkinter as _tk
+        import tkinter.font as _tkf
+        _root = _tk.Tk(); _root.withdraw()
+        available = _tkf.families(_root)
+        _root.destroy()
+        for f in ["Bahnschrift", _FONT, "Century Gothic", "Segoe UI"]:
+            if f in available:
+                return f
+    except Exception:
+        pass
+    return "Segoe UI"
+
+_FONT = _detect_font()
+
 # Polices
-F_TITLE  = ("Rajdhani", 11, "bold")     # Police low-poly / futuriste
-F_HEAD   = ("Rajdhani", 10, "bold")
-F_BODY   = ("Rajdhani", 9)
-F_SMALL  = ("Rajdhani", 8)
-F_TINY   = ("Rajdhani", 7)
-F_BADGE  = ("Rajdhani", 7, "bold")
-F_SCORE  = ("Rajdhani", 36, "bold")
+F_TITLE  = (_FONT, 11, "bold")
+F_HEAD   = (_FONT, 10, "bold")
+F_BODY   = (_FONT, 9)
+F_SMALL  = (_FONT, 8)
+F_TINY   = (_FONT, 7)
+F_BADGE  = (_FONT, 7, "bold")
+F_SCORE  = (_FONT, 36, "bold")
 F_MONO   = ("Consolas", 8)
 F_ICON   = ("Segoe MDL2 Assets", 14)
 F_ICO_S  = ("Segoe MDL2 Assets", 12)
-
-# Fallback si Rajdhani absent (toujours present sur Windows 10/11)
-import tkinter.font as tkfont
-
-def safe_font(preferred, fallback, size, *style):
-    return (preferred, size, *style)
 
 # ================================================================
 #  POLYGONES LOW-POLY (dessines sur canvas)
@@ -301,6 +317,7 @@ class SideBtn(tk.Frame):
     H = 60
 
     def __init__(self, parent, ico, lbl, cmd, **kw):
+        # Hauteur fixe garantie: 9 boutons rentrent dans 540px minimum
         super().__init__(parent, bg=PANEL, width=64, height=self.H, cursor="hand2", **kw)
         self.pack_propagate(False)
         self._cmd    = cmd
@@ -310,12 +327,12 @@ class SideBtn(tk.Frame):
         self._bar.pack(side="left", fill="y")
 
         mid = tk.Frame(self, bg=PANEL)
-        mid.pack(fill="both", expand=True, pady=8)
+        mid.pack(fill="both", expand=True, pady=7)
 
         self._ico = tk.Label(mid, text=ico, font=F_ICON, bg=PANEL, fg=T2)
         self._ico.pack()
         self._lbl = tk.Label(mid, text=lbl, font=("Segoe UI", 6), bg=PANEL, fg=T3)
-        self._lbl.pack()
+        self._lbl.pack(pady=1)
 
         for w in (self, mid, self._ico, self._lbl, self._bar):
             w.bind("<Button-1>", lambda e: self._cmd())
@@ -379,6 +396,8 @@ class App(tk.Tk):
         self._maximized  = False
         self._norm_geo   = "1160x730"
         self._nm_running = False
+        self._tray_active = False
+        self._tray_hwnd  = None
         self._nm_cards   = {}
         self._nm_log     = None
         self._n_log      = None
@@ -564,8 +583,166 @@ class App(tk.Tk):
 
 
     def _quit(self):
+        """Ferme la fenetre et garde le logiciel en arriere-plan (tray)."""
         write_save(self._save)
+        self.withdraw()          # Cache la fenetre
+        self._show_tray_icon()   # Affiche l icone dans la barre systeme
+
+    def _quit_completely(self):
+        """Quitte completement le logiciel."""
+        write_save(self._save)
+        self._tray_active = False
+        try:
+            if hasattr(self, "_tray_icon") and self._tray_icon:
+                self._tray_icon.destroy()
+        except Exception: pass
         self.destroy()
+
+    def _show_window(self):
+        """Restaure la fenetre depuis le tray."""
+        self.deiconify()
+        self.overrideredirect(True)
+        self.lift()
+        self.focus_force()
+
+    def _show_tray_icon(self):
+        """Cree une icone dans la barre des taches (system tray) via win32."""
+        self._tray_active = True
+        threading.Thread(target=self._tray_loop, daemon=True).start()
+
+    def _tray_loop(self):
+        """Boucle tray via win32 API pure - aucune dependance externe."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+            import struct
+
+            # Constantes win32
+            WM_APP        = 0x8000
+            WM_TRAY       = WM_APP + 1
+            NIM_ADD       = 0x00000000
+            NIM_DELETE    = 0x00000002
+            NIF_MESSAGE   = 0x00000001
+            NIF_ICON      = 0x00000002
+            NIF_TIP       = 0x00000004
+            WM_LBUTTONDBLCLK = 0x0203
+            WM_RBUTTONUP  = 0x0205
+            WM_DESTROY    = 0x0002
+            IDI_APPLICATION = 32512
+            IMAGE_ICON    = 1
+            LR_SHARED     = 0x8000
+
+            user32   = ctypes.windll.user32
+            shell32  = ctypes.windll.shell32
+            kernel32 = ctypes.windll.kernel32
+
+            # Creer une classe de fenetre invisible
+            WNDPROC = ctypes.WINFUNCTYPE(
+                ctypes.c_long, wintypes.HWND,
+                ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM)
+
+            def wnd_proc(hwnd, msg, wparam, lparam):
+                if msg == WM_TRAY:
+                    if lparam == WM_LBUTTONDBLCLK:
+                        self.after(0, self._show_window)
+                    elif lparam == WM_RBUTTONUP:
+                        # Menu contextuel simple
+                        self.after(0, self._tray_menu)
+                elif msg == WM_DESTROY:
+                    return 0
+                return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+            wnd_proc_ptr = WNDPROC(wnd_proc)
+
+            class WNDCLASSEX(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize",        ctypes.c_uint),
+                    ("style",         ctypes.c_uint),
+                    ("lpfnWndProc",   WNDPROC),
+                    ("cbClsExtra",    ctypes.c_int),
+                    ("cbWndExtra",    ctypes.c_int),
+                    ("hInstance",     wintypes.HANDLE),
+                    ("hIcon",         wintypes.HANDLE),
+                    ("hCursor",       wintypes.HANDLE),
+                    ("hbrBackground", wintypes.HANDLE),
+                    ("lpszMenuName",  wintypes.LPCWSTR),
+                    ("lpszClassName", wintypes.LPCWSTR),
+                    ("hIconSm",       wintypes.HANDLE),
+                ]
+
+            hinstance = kernel32.GetModuleHandleW(None)
+            class_name = "FrameRepublicTray"
+
+            wc = WNDCLASSEX()
+            wc.cbSize        = ctypes.sizeof(WNDCLASSEX)
+            wc.lpfnWndProc   = wnd_proc_ptr
+            wc.hInstance     = hinstance
+            wc.lpszClassName = class_name
+            wc.hIcon         = user32.LoadIconW(None, IDI_APPLICATION)
+            wc.hIconSm       = wc.hIcon
+            user32.RegisterClassExW(ctypes.byref(wc))
+
+            hwnd = user32.CreateWindowExW(
+                0, class_name, "FrameRepublic",
+                0, 0, 0, 0, 0, None, None, hinstance, None)
+            self._tray_hwnd = hwnd
+
+            # Ajouter l icone dans le tray
+            class NOTIFYICONDATA(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize",           ctypes.c_ulong),
+                    ("hWnd",             wintypes.HWND),
+                    ("uID",              ctypes.c_uint),
+                    ("uFlags",           ctypes.c_uint),
+                    ("uCallbackMessage", ctypes.c_uint),
+                    ("hIcon",            wintypes.HANDLE),
+                    ("szTip",            ctypes.c_wchar * 128),
+                ]
+
+            nid = NOTIFYICONDATA()
+            nid.cbSize           = ctypes.sizeof(NOTIFYICONDATA)
+            nid.hWnd             = hwnd
+            nid.uID              = 1
+            nid.uFlags           = NIF_ICON | NIF_MESSAGE | NIF_TIP
+            nid.uCallbackMessage = WM_TRAY
+            nid.hIcon            = user32.LoadIconW(None, IDI_APPLICATION)
+            nid.szTip            = "Frame Republic - En arriere-plan"
+            shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+            self._tray_nid = nid
+
+            # Boucle de messages win32
+            msg = wintypes.MSG()
+            while self._tray_active:
+                if user32.PeekMessageW(ctypes.byref(msg), None,
+                                       0, 0, 1):  # PM_REMOVE=1
+                    user32.TranslateMessage(ctypes.byref(msg))
+                    user32.DispatchMessageW(ctypes.byref(msg))
+                else:
+                    import time as _t; _t.sleep(0.05)
+
+            # Supprimer l icone
+            shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
+
+        except Exception as e:
+            # Si tray echoue - quitter proprement quand meme
+            self.after(0, self.destroy)
+
+    def _tray_menu(self):
+        """Menu clic-droit sur l icone tray."""
+        menu = tk.Menu(self, tearoff=0,
+                       bg=CARD, fg=T1,
+                       activebackground=A_D, activeforeground=A,
+                       font=F_SMALL, bd=0, relief="flat")
+        menu.add_command(label="Ouvrir Frame Republic",
+                         command=self._show_window)
+        menu.add_separator()
+        menu.add_command(label="Quitter completement",
+                         command=self._quit_completely)
+        try:
+            x = self.winfo_pointerx()
+            y = self.winfo_pointery()
+            menu.tk_popup(x, y)
+        except Exception: pass
 
     # ================================================================
     #  BUILD
@@ -642,12 +819,12 @@ class App(tk.Tk):
         for i in range(6):
             a = math.radians(60*i-30); pts += [14+12*math.cos(a), 14+12*math.sin(a)]
         hx.create_polygon(*pts, fill=A_D, outline=A, width=1)
-        hx.create_text(14,14, text="FR", fill=A, font=("Rajdhani",8,"bold"))
+        hx.create_text(14,14, text="FR", fill=A, font=(_FONT,8,"bold"))
         for w in (hx, logo):
             w.bind("<ButtonPress-1>", self._drag_start)
             w.bind("<B1-Motion>",     self._drag_move)
 
-        tk.Label(logo, text="  FRAME REPUBLIC", font=("Rajdhani",12,"bold"),
+        tk.Label(logo, text="  FRAME REPUBLIC", font=(_FONT,12,"bold"),
                  bg=PANEL, fg=WHITE).pack(side="left")
         tk.Label(logo, text="  PC Optimizer", font=F_SMALL,
                  bg=PANEL, fg=T2).pack(side="left")
@@ -731,24 +908,12 @@ class App(tk.Tk):
         sb = tk.Frame(parent, bg=PANEL, width=64)
         sb.grid(row=0, column=0, sticky="ns"); sb.grid_propagate(False)
 
-        # Separateur droite
+        # Separateur droite - simple ligne
         tk.Frame(sb, bg=BD, width=1).pack(side="right", fill="y")
 
-        # Canvas low-poly sidebar
-        cv = tk.Canvas(sb, bg=PANEL, highlightthickness=0, width=63)
-        cv.place(relx=0, rely=0, relwidth=1, relheight=1)
-        def draw_sb(e=None):
-            cv.delete("sbp")
-            h = cv.winfo_height()
-            cv.create_polygon(0,0,63,0,63,120, fill=P3, outline="", tags="sbp")
-            cv.create_polygon(0,0,63,120,0,200, fill=P2, outline="", tags="sbp")
-            if h > 10:
-                cv.create_polygon(0,h,63,h,0,h-100, fill=P2, outline="", tags="sbp")
-        cv.bind("<Configure>", lambda e: draw_sb())
-
-        # Inner par-dessus
+        # Inner directement dans sb - PAS de canvas par-dessus
         inner = tk.Frame(sb, bg=PANEL)
-        inner.place(relx=0, rely=0, relwidth=1, relheight=1)
+        inner.pack(fill="both", expand=True)
 
         pages = [
             ("dashboard",       "\ue80f", "Accueil"),
@@ -796,14 +961,14 @@ class App(tk.Tk):
             for i, (lw, ul) in enumerate(items):
                 a = (i == idx)
                 lw.config(fg=WHITE if a else T2,
-                           font=(("Rajdhani",9,"bold") if a else F_TINY))
+                           font=((_FONT,9,"bold") if a else F_TINY))
                 ul.config(bg=A if a else PANEL)
             frames[idx].lift()
 
         for i, lbl in enumerate(labels):
             col = tk.Frame(bar, bg=PANEL); col.pack(side="left")
             lw  = tk.Label(col, text=lbl.upper(),
-                           font=("Rajdhani",9,"bold") if i==0 else F_TINY,
+                           font=(_FONT,9,"bold") if i==0 else F_TINY,
                            bg=PANEL, fg=WHITE if i==0 else T2,
                            padx=14, pady=9, cursor="hand2")
             lw.pack()
@@ -917,7 +1082,7 @@ class App(tk.Tk):
         tk.Label(sc_f, text="/ 100", font=F_TINY, bg=CARD, fg=T3).place(
             in_=sc_cv, relx=0.5, rely=0.66, anchor="center")
         self._score_sub = tk.Label(sc_f, text="Calcul...",
-                                    font=("Rajdhani",8,"bold"), bg=CARD, fg=A2)
+                                    font=(_FONT,8,"bold"), bg=CARD, fg=A2)
         self._score_sub.place(in_=sc_cv, relx=0.5, rely=0.88, anchor="center")
 
         # Jauges
@@ -942,7 +1107,7 @@ class App(tk.Tk):
                     # Petit triangle deco coin bas-gauche
                     canvas.create_polygon(0,82,14,82,0,68, fill=P3, outline="")
                     canvas.create_text(41,35, text=str(int(pct))+"%",
-                                      fill=col2, font=("Rajdhani",11,"bold"))
+                                      fill=col2, font=(_FONT,11,"bold"))
                 return draw
 
             fn = mk_ring(cv, col)
@@ -985,7 +1150,7 @@ class App(tk.Tk):
                     cv_b.create_arc(7,7,75,75, start=90, extent=-int(3.6*p),
                                    outline=col2, width=8, style="arc")
                 cv_b.create_text(41,35, text=str(int(p))+"%",
-                                fill=col2, font=("Rajdhani",11,"bold"))
+                                fill=col2, font=(_FONT,11,"bold"))
             self._ring_fns["bat"] = draw_bat
             cv_b.after(100, lambda: draw_bat(0))
             tk.Label(bf, text="BATT", font=F_TINY, bg=BG, fg=T2).pack(pady=3)
@@ -1025,7 +1190,7 @@ class App(tk.Tk):
             tri.create_polygon(20,0,20,14,6,0, fill=A_D, outline="")
             ci = tk.Frame(c, bg=CARD, padx=8, pady=6); ci.pack(fill="both")
             tk.Label(ci, text=lbl, font=F_TINY, bg=CARD, fg=T3).pack(anchor="w")
-            v = tk.Label(ci, text="--", font=("Rajdhani",10,"bold"), bg=CARD, fg=col)
+            v = tk.Label(ci, text="--", font=(_FONT,10,"bold"), bg=CARD, fg=col)
             v.pack(anchor="w"); self._stat_lbls[key] = v
 
         # ── AUTO-OPTIMIZE PANEL ──────────────────────────────────────
@@ -1058,10 +1223,10 @@ class App(tk.Tk):
         ao_tri.create_polygon(8,0,16,16,0,16, fill=A, outline="")
 
         tk.Label(ao_title_f, text="OPTIMISATION AUTOMATIQUE",
-                 font=("Rajdhani",10,"bold"), bg=CARD, fg=WHITE).pack(side="left")
+                 font=(_FONT,10,"bold"), bg=CARD, fg=WHITE).pack(side="left")
         tk.Label(ao_title_f,
                  text="  Analyse et applique les optimisations sans endommager le systeme",
-                 font=("Rajdhani",7), bg=CARD, fg=T2).pack(side="left")
+                 font=(_FONT,7), bg=CARD, fg=T2).pack(side="left")
 
         # Barre de progression + statut
         ao_mid = tk.Frame(ao_inner, bg=CARD); ao_mid.pack(fill="x", pady=6)
@@ -1075,15 +1240,15 @@ class App(tk.Tk):
 
         ao_status_row = tk.Frame(ao_mid, bg=CARD); ao_status_row.pack(fill="x")
         self._ao_status = tk.Label(ao_status_row, text="Pret a optimiser",
-                                    font=("Rajdhani",8), bg=CARD, fg=T2)
+                                    font=(_FONT,8), bg=CARD, fg=T2)
         self._ao_status.pack(side="left")
         self._ao_score_delta = tk.Label(ao_status_row, text="",
-                                         font=("Rajdhani",8,"bold"), bg=CARD, fg=A)
+                                         font=(_FONT,8,"bold"), bg=CARD, fg=A)
         self._ao_score_delta.pack(side="left", padx=8)
 
         # Raisons / log compact
         self._ao_reasons = tk.Label(ao_inner, text="",
-                                     font=("Rajdhani",7), bg=CARD, fg=T2,
+                                     font=(_FONT,7), bg=CARD, fg=T2,
                                      anchor="w", justify="left", wraplength=900)
         self._ao_reasons.pack(fill="x", pady=3)
 
@@ -1091,7 +1256,7 @@ class App(tk.Tk):
         ao_btns = tk.Frame(ao_top, bg=CARD); ao_btns.pack(side="right")
 
         self._ao_undo_btn = tk.Label(ao_btns, text="Annuler",
-                                      font=("Rajdhani",8), bg=CARD, fg=T2,
+                                      font=(_FONT,8), bg=CARD, fg=T2,
                                       padx=10, pady=5, cursor="hand2",
                                       highlightthickness=1, highlightbackground=BD)
         self._ao_undo_btn.pack(side="right", padx=6)
@@ -1100,7 +1265,7 @@ class App(tk.Tk):
         self._ao_undo_btn.bind("<Button-1>", lambda e: threading.Thread(target=self._ao_undo, daemon=True).start())
 
         self._ao_btn = tk.Label(ao_btns, text="  Optimiser maintenant  ",
-                                 font=("Rajdhani",9,"bold"), bg=A_D, fg=A,
+                                 font=(_FONT,9,"bold"), bg=A_D, fg=A,
                                  padx=14, pady=5, cursor="hand2",
                                  highlightthickness=1, highlightbackground=A)
         self._ao_btn.pack(side="right")
@@ -1265,7 +1430,7 @@ class App(tk.Tk):
         """Surveillance reseau en temps reel."""
         hdr = tk.Frame(p, bg=BG); hdr.pack(fill="x", padx=14, pady=10)
         tk.Label(hdr, text="SURVEILLANCE EN TEMPS REEL",
-                 font=("Rajdhani",9,"bold"), bg=BG, fg=A).pack(side="left")
+                 font=(_FONT,9,"bold"), bg=BG, fg=A).pack(side="left")
 
         # Cartes stats
         cr = tk.Frame(p, bg=BG); cr.pack(fill="x", padx=14, pady=0)
@@ -1283,12 +1448,14 @@ class App(tk.Tk):
             tri.pack(anchor="ne")
             tri.create_polygon(16,0,16,12,4,0, fill=A_D, outline="")
             tk.Label(c, text=lbl, font=F_TINY, bg=CARD, fg=T3).pack(padx=10)
-            v = tk.Label(c, text="--", font=("Rajdhani",13,"bold"), bg=CARD, fg=col)
+            v = tk.Label(c, text="--", font=(_FONT,13,"bold"), bg=CARD, fg=col)
             v.pack(padx=10); self._nm_cards[key] = v
 
         # Boutons
         br = tk.Frame(p, bg=BG); br.pack(fill="x", padx=14, pady=0)
         self._nm_running = False
+        self._tray_active = False
+        self._tray_hwnd  = None
         self._nm_btn = self._mk_btn(br, "Demarrer la surveillance", self._nm_toggle, A)
         self._nm_btn.pack(side="left", padx=0)
         self._mk_btn(br, "Test latence Google", self._nm_latency_test, ORANGE).pack(side="left", padx=0)
@@ -1362,7 +1529,7 @@ class App(tk.Tk):
 
         self._c_bar=ttk.Progressbar(left,mode="indeterminate",style="FR.Horizontal.TProgressbar")
         self._c_bar.pack(fill="x",pady=8)
-        self._c_res=tk.Label(left,text="",font=("Rajdhani",9,"bold"),bg=BG,fg=A)
+        self._c_res=tk.Label(left,text="",font=(_FONT,9,"bold"),bg=BG,fg=A)
         self._c_res.pack(anchor="w",pady=4)
 
         right=tk.Frame(body,bg=BG); right.pack(side="right",fill="both",expand=True)
@@ -1825,6 +1992,8 @@ class App(tk.Tk):
         self._clog(self._n_log,run("ipconfig")[:800])
 
     def _ping(self):
+        if not self._check_network():
+            self._clog(self._n_log,"Pas de connexion reseau disponible.","err"); return
         threading.Thread(target=lambda: self._clog(self._n_log,run("ping -n 4 8.8.8.8",15),"ok"),daemon=True).start()
 
     def _arp(self):
@@ -1874,6 +2043,8 @@ class App(tk.Tk):
             run("netsh int tcp set global autotuninglevel=disabled")
 
     def _do_dns_google(self, state=True):
+        if state and not self._check_network():
+            self._dlog("Reseau requis pour configurer DNS","err"); return
         if state:
             ps("$adapters=Get-NetAdapter | Where-Object {$_.Status -eq \'Up\'}; foreach($a in $adapters){ try{ Set-DnsClientServerAddress -InterfaceIndex $a.InterfaceIndex -ServerAddresses (\'8.8.8.8\',\'8.8.4.4\') -ErrorAction SilentlyContinue }catch{} }")
         else:
@@ -1888,6 +2059,8 @@ class App(tk.Tk):
                 "Winsock reinitialise.\nRedemarrez le PC pour appliquer.")
 
     def _traceroute(self):
+        if not self._check_network():
+            self._clog(self._n_log,"Pas de connexion reseau disponible.","err"); return
         self._clog(self._n_log, "Traceroute vers 8.8.8.8...", "info")
         threading.Thread(
             target=lambda: self._clog(self._n_log,
@@ -1949,6 +2122,8 @@ class App(tk.Tk):
             time.sleep(1)
 
     def _nm_latency_test(self):
+        if not self._check_network():
+            self._clog(self._nm_log,"Pas de connexion reseau.","err"); return
         self._clog(self._nm_log, "Test latence (4 pings Google)...", "info")
         def do():
             out = run("ping -n 4 8.8.8.8", 15)
@@ -2242,233 +2417,6 @@ class App(tk.Tk):
         self._dlog("Auto-optim: annulation manuelle effectuee")
 
 
-    # ================================================================
-    #  METHODES RESEAU AVANCEES
-    # ================================================================
-    def _do_net_throttle(self, state=True):
-        """Desactive le throttling reseau Windows."""
-        val = 0xFFFFFFFF if state else 10
-        reg_set(winreg.HKEY_LOCAL_MACHINE,
-                r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile",
-                "NetworkThrottlingIndex", val)
-
-    def _do_tcp_ack(self, state=True):
-        """Optimise les ACK TCP pour reduire la latence."""
-        val = 1 if state else 2
-        reg_set(winreg.HKEY_LOCAL_MACHINE,
-                r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces",
-                "TcpAckFrequency", val)
-        reg_set(winreg.HKEY_LOCAL_MACHINE,
-                r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters",
-                "TcpAckFrequency", val)
-
-    def _do_winsock_reset(self):
-        """Reset la pile Winsock."""
-        if not messagebox.askyesno("Reset Winsock",
-            "Reinitialiser la pile Winsock ?\nNecessite un redemarrage."):
-            return
-        out = run("netsh winsock reset")
-        if hasattr(self, "_net_adv_log"):
-            self._clog(self._net_adv_log, "Winsock reset: "+out[:80], "ok")
-        self._dlog("Winsock reset effectue - redemarrage conseille", "warn")
-
-    def _do_mtu_optimize(self):
-        """Lance un test MTU optimal."""
-        if hasattr(self, "_net_adv_log"):
-            self._clog(self._net_adv_log, "Test MTU en cours...", "info")
-        threading.Thread(target=self._mtu_test_th, daemon=True).start()
-
-    def _mtu_test_th(self):
-        """Teste le MTU optimal par dichotomie."""
-        best = 576
-        for size in [1500, 1480, 1468, 1452, 1440, 1400, 1350, 1300]:
-            out = run("ping -n 1 -l {} -f 8.8.8.8".format(size-28), t=8)
-            if "TTL=" in out or "octets" in out.lower():
-                best = size
-                break
-        if hasattr(self, "_net_adv_log"):
-            self._clog(self._net_adv_log,
-                       "MTU optimal detecte: {} octets".format(best), "ok")
-            self._clog(self._net_adv_log,
-                       "Appliquez ce MTU dans le champ ci-dessus", "info")
-
-    def _do_tcp_buffers(self):
-        """Optimise les buffers TCP send/receive."""
-        reg_set(winreg.HKEY_LOCAL_MACHINE,
-                r"SYSTEM\CurrentControlSet\Services\AFD\Parameters",
-                "DefaultReceiveWindow", 65536)
-        reg_set(winreg.HKEY_LOCAL_MACHINE,
-                r"SYSTEM\CurrentControlSet\Services\AFD\Parameters",
-                "DefaultSendWindow", 65536)
-        if hasattr(self, "_net_adv_log"):
-            self._clog(self._net_adv_log,
-                       "Buffers TCP: Send=64KB, Recv=64KB", "ok")
-
-    def _do_disable_rss(self):
-        """Desactive RSS (Receive Side Scaling) si non utilise."""
-        out = run("netsh int tcp set global rss=disabled")
-        if hasattr(self, "_net_adv_log"):
-            self._clog(self._net_adv_log, "RSS: "+out[:80], "ok")
-
-    def _net_adapter_detail(self):
-        """Affiche les details des adaptateurs."""
-        if not HAS_PSUTIL: return
-        threading.Thread(target=self._net_adapter_detail_th, daemon=True).start()
-
-    def _net_adapter_detail_th(self):
-        try:
-            stats = psutil.net_if_stats()
-            addrs = psutil.net_if_addrs()
-            for name, stat in stats.items():
-                status = "UP" if stat.isup else "DOWN"
-                speed  = str(stat.speed)+"Mbps" if stat.speed > 0 else "?"
-                msg = "{:<20s}  {}  {}  duplex={}".format(
-                    name[:20], status, speed,
-                    "full" if stat.duplex.value == 2 else "half")
-                if hasattr(self, "_net_adv_log"):
-                    self._clog(self._net_adv_log, msg,
-                               "ok" if stat.isup else "dim")
-        except Exception as e:
-            if hasattr(self, "_net_adv_log"):
-                self._clog(self._net_adv_log, str(e), "err")
-
-    def _net_latency_test(self):
-        """Test de latence vers plusieurs serveurs."""
-        if hasattr(self, "_net_adv_log"):
-            self._clog(self._net_adv_log, "Test latence...", "info")
-        threading.Thread(target=self._net_latency_th, daemon=True).start()
-
-    def _net_latency_th(self):
-        targets = [("Google DNS", "8.8.8.8"), ("Cloudflare", "1.1.1.1"),
-                   ("Quad9", "9.9.9.9"), ("OpenDNS", "208.67.222.222")]
-        for name, ip in targets:
-            out = run("ping -n 4 "+ip, t=12)
-            avg = "?"
-            import re
-            m = re.search("[Mm]oyenne\\s*=\\s*(\\d+)|[Aa]verage\\s*=\\s*(\\d+)ms", out)
-            if m:
-                avg = (m.group(1) or m.group(2))+"ms"
-            else:
-                m2 = re.search(r"(\d+)ms", out)
-                if m2: avg = m2.group(1)+"ms"
-            tag = "ok" if avg != "?" and int(avg.replace("ms","")) < 30 else "warn"
-            if hasattr(self, "_net_adv_log"):
-                self._clog(self._net_adv_log,
-                           "{:<14s}  {}".format(name, avg), tag)
-
-    def _apply_mtu(self):
-        """Applique le MTU choisi sur tous les adaptateurs."""
-        try:
-            mtu = int(self._mtu_var.get())
-            if mtu < 576 or mtu > 9000:
-                if hasattr(self, "_net_adv_log"):
-                    self._clog(self._net_adv_log, "MTU invalide (576-9000)", "err")
-                return
-        except ValueError:
-            if hasattr(self, "_net_adv_log"):
-                self._clog(self._net_adv_log, "MTU invalide", "err")
-            return
-        threading.Thread(target=self._apply_mtu_th, args=(mtu,), daemon=True).start()
-
-    def _apply_mtu_th(self, mtu):
-        out = run("netsh interface ipv4 set subinterface "
-                  '"Wi-Fi" mtu={} store=persistent'.format(mtu))
-        out2 = run("netsh interface ipv4 set subinterface "
-                   '"Ethernet" mtu={} store=persistent'.format(mtu))
-        if hasattr(self, "_net_adv_log"):
-            self._clog(self._net_adv_log,
-                       "MTU={} applique (Wi-Fi + Ethernet)".format(mtu), "ok")
-
-    def _set_dns(self, primary, secondary=None):
-        """Change le serveur DNS sur tous les adaptateurs."""
-        if not secondary:
-            secondary = primary
-        log = self._dns_log if hasattr(self, "_dns_log_txt") else self._dlog
-        try:
-            ps_cmd = (
-                'Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | '
-                'ForEach-Object { '
-                'Set-DnsClientServerAddress -InterfaceAlias $_.Name '
-                '-ServerAddresses ("' + primary + '","' + secondary + '") '
-                '-ErrorAction SilentlyContinue }'
-            )
-            out = ps(ps_cmd, t=20)
-            self._dns_log("DNS configure: "+primary+" / "+secondary, "ok")
-            self._dns_log("Tous les adaptateurs actifs mis a jour", "info")
-        except Exception as e:
-            self._dns_log("Erreur DNS: "+str(e), "err")
-
-    def _dns_test(self):
-        """Test la resolution DNS."""
-        self._dns_log("Test resolution DNS...", "info")
-        threading.Thread(target=self._dns_test_th, daemon=True).start()
-
-    def _dns_test_th(self):
-        domains = ["google.com", "github.com", "microsoft.com", "cloudflare.com"]
-        for d in domains:
-            out = run("nslookup "+d+" 2>&1", t=8)
-            ok = "Address" in out or "Adresse" in out
-            self._dns_log("{:<20s}  {}".format(d, "OK" if ok else "ECHEC"),
-                         "ok" if ok else "err")
-
-    def _dns_latency(self):
-        """Mesure la latence DNS de plusieurs serveurs."""
-        self._dns_log("Mesure latence DNS...", "info")
-        threading.Thread(target=self._dns_latency_th, daemon=True).start()
-
-    def _dns_latency_th(self):
-        import time as _time
-        servers = [("Google",      "8.8.8.8"),
-                   ("Cloudflare",  "1.1.1.1"),
-                   ("Quad9",       "9.9.9.9"),
-                   ("OpenDNS",     "208.67.222.222")]
-        for name, ip in servers:
-            t0 = _time.perf_counter()
-            run("nslookup google.com "+ip, t=6)
-            ms = int((time.perf_counter()-t0)*1000)
-            tag = "ok" if ms < 30 else "warn" if ms < 80 else "err"
-            self._dns_log("{:<14s} {} : {}ms".format(name, ip, ms), tag)
-
-    def _dns_show_current(self):
-        """Affiche les serveurs DNS actuels."""
-        self._dns_log("Serveurs DNS actuels:", "title")
-        threading.Thread(
-            target=lambda: self._dns_log(
-                run("ipconfig /all | findstr DNS", t=8)[:400], "info"),
-            daemon=True).start()
-
-    def _dns_restore(self):
-        """Restaure le DNS automatique (DHCP)."""
-        try:
-            ps_cmd = (
-                'Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | '
-                'ForEach-Object { '
-                'Set-DnsClientServerAddress -InterfaceAlias $_.Name '
-                '-ResetServerAddresses -ErrorAction SilentlyContinue }'
-            )
-            ps(ps_cmd, t=15)
-            self._dns_log("DNS restaure en automatique (DHCP)", "ok")
-        except Exception as e:
-            self._dns_log("Erreur: "+str(e), "err")
-
-    def _net_route(self):
-        """Affiche la table de routage."""
-        if hasattr(self, "_n_log"):
-            self._clog(self._n_log, "Table de routage:", "title")
-            threading.Thread(
-                target=lambda: self._clog(self._n_log, run("route print", t=10)[:800]),
-                daemon=True).start()
-
-    def _netstat_stats(self):
-        """Affiche les statistiques reseau."""
-        if hasattr(self, "_n_log"):
-            self._clog(self._n_log, "Statistiques TCP/IP:", "title")
-            threading.Thread(
-                target=lambda: self._clog(self._n_log,
-                    run("netstat -s | findstr -i tcp 2>&1", t=10)[:600]),
-                daemon=True).start()
-
-    # ================================================================
     #  POLLING
     # ================================================================
     def _poll(self):
@@ -2521,15 +2469,132 @@ class App(tk.Tk):
         self.after(2000,self._poll)
 
     # ================================================================
+    #  EFFETS VISUELS  (animations low-poly)
+    # ================================================================
+
+    def _nav_animated(self, key):
+        """Navigation avec flash d'accent sur le contenu."""
+        # Flash rapide du bord de la fenetre
+        self._flash_border()
+        # Changer la page
+        self._nav(key)
+
+    def _flash_border(self):
+        """Pulse rapide de la bordure externe (accent cyan)."""
+        colors = [A, WHITE, A, BD_A]
+        def step(i=0):
+            if i >= len(colors): return
+            try:
+                # outer frame est le premier child de self
+                outer = self.winfo_children()[0]
+                outer.config(bg=colors[i])
+            except Exception: pass
+            self.after(40, lambda: step(i+1))
+        step()
+
+    def _start_visual_effects(self):
+        """Lance toutes les animations continues."""
+        self._pulse_score()
+        self._animate_topbar_line()
+        self._particles_init()
+        self.after(100, self._particles_step)
+
+    def _pulse_score(self):
+        """Fait pulser doucement le score label (cyan <-> blanc)."""
+        if not hasattr(self, '_score_lbl'): return
+        if not hasattr(self, '_pulse_state'): self._pulse_state = 0
+        self._pulse_state = (self._pulse_state + 1) % 60
+        t = abs(self._pulse_state - 30) / 30.0  # 0.0 -> 1.0 -> 0.0
+        # Interpoler entre A (#00e5b8) et WHITE (#eef0ff)
+        r1,g1,b1 = 0x00,0xe5,0xb8
+        r2,g2,b2 = 0xee,0xf0,0xff
+        r = int(r1 + (r2-r1)*t*0.3)
+        g = int(g1 + (g2-g1)*t*0.3)
+        b = int(b1 + (b2-b1)*t*0.3)
+        col = "#{:02x}{:02x}{:02x}".format(r,g,b)
+        try:
+            cur = self._score_lbl.cget("fg")
+            if cur != "#eef0ff":  # seulement si pas override par couleur warning
+                self._score_lbl.config(fg=col)
+        except Exception: pass
+        self.after(50, self._pulse_score)
+
+    def _animate_topbar_line(self):
+        """Fait glisser une lueur sur la ligne separatrice."""
+        if not hasattr(self, '_topbar_line_pos'): self._topbar_line_pos = 0
+        # Rien a faire ici - la ligne est statique
+        # On pourrait animer un canvas mais on garde simple
+        pass
+
+    # ── Particules low-poly sur dashboard ─────────────────────────
+    def _particles_init(self):
+        """Initialise les particules flottantes."""
+        if not hasattr(self, '_bg_cv'): return
+        import random
+        self._particles = []
+        for _ in range(18):
+            self._particles.append({
+                'x':  random.randint(0, 1160),
+                'y':  random.randint(0, 730),
+                'vx': random.uniform(-0.4, 0.4),
+                'vy': random.uniform(-0.3, 0.3),
+                'size': random.randint(2, 5),
+                'alpha': random.randint(1, 3),  # 1=dim, 2=mid, 3=bright
+                'tag': 'p_'+str(_),
+            })
+
+    def _particles_step(self):
+        """Avance les particules d un pas."""
+        if not hasattr(self, '_bg_cv'): self.after(100, self._particles_step); return
+        try:
+            cv = self._bg_cv
+            w = cv.winfo_width(); h = cv.winfo_height()
+            if w < 10: self.after(80, self._particles_step); return
+
+            for p in self._particles:
+                cv.delete(p['tag'])
+                p['x'] += p['vx']; p['y'] += p['vy']
+                # Rebond sur les bords
+                if p['x'] < 0 or p['x'] > w: p['vx'] *= -1
+                if p['y'] < 0 or p['y'] > h: p['vy'] *= -1
+                p['x'] = max(0, min(w, p['x']))
+                p['y'] = max(0, min(h, p['y']))
+                # Couleur selon alpha
+                cols = [T3, T2, BD_A]
+                col = cols[min(p['alpha']-1, 2)]
+                s = p['size']
+                # Triangle low-poly au lieu de point
+                cv.create_polygon(
+                    p['x'], p['y']-s,
+                    p['x']+s, p['y']+s,
+                    p['x']-s, p['y']+s,
+                    fill=col, outline="", tags=p['tag'])
+        except Exception:
+            pass
+        self.after(80, self._particles_step)
+
+    def _animate_gauge_startup(self, key, target_fn):
+        """Animation count-up des jauges au demarrage."""
+        if key not in self._ring_fns: return
+        count = [0]
+        def step():
+            if count[0] > 100: return
+            self._ring_fns[key](count[0] % 101)
+            count[0] += 3
+            self.after(20, step)
+        step()
+
+
+    # ================================================================
     #  STYLES TTK
     # ================================================================
     def _setup_style(self):
         s=ttk.Style(self); s.theme_use("clam")
         s.configure("FR.Treeview",background=CARD,foreground=T1,fieldbackground=CARD,
-                    bordercolor=BD,rowheight=24,font=("Rajdhani",8))
+                    bordercolor=BD,rowheight=24,font=(_FONT,8))
         s.map("FR.Treeview",background=[("selected",A_D)],foreground=[("selected",A)])
         s.configure("FR.Treeview.Heading",background=CARD_H,foreground=A,
-                    bordercolor=BD,font=("Rajdhani",8,"bold"))
+                    bordercolor=BD,font=(_FONT,8,"bold"))
         s.configure("FR.Horizontal.TProgressbar",troughcolor=CARD,background=A,bordercolor=BD)
 
 # ================================================================
