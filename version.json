@@ -1,5 +1,5 @@
 {
-  "version": "1.0.7",
+  "version": "1.0.6",
   "url": "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py",
-  "notes": "Demarrage activer/desactiver, admin corrige, maximize responsive, 73 options"
+  "notes": "Demarrage activer/desactiver, admin robuste, maximize full screen, 73 options, capteurs hardware"
 }
