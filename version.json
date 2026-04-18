@@ -1,0 +1,5 @@
+{
+  "version": "1.0.8",
+  "url": "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py",
+  "notes": "Demarrage complet (Wow64, services, taches), Optimisation GPU auto (NVIDIA/AMD/Intel), MSI GPU, Priorite jeux"
+}
