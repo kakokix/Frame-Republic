@@ -1,5 +1,5 @@
 {
-  "version": "1.0.9",
+  "version": "1.1.0",
   "url": "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py",
-  "notes": "Optimisation NVIDIA gaming complete et sure (VSync off, Perf max, Reflex Ultra)"
+  "notes": "Authentification SHA-256 securisee a l ouverture"
 }
