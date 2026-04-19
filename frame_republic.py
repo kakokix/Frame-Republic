@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-VERSION     = "1.0.9"
+VERSION     = "1.1.0"
 VERSION_URL = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/version.json"
 UPDATE_URL  = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py"
 # Pour les .exe compiles: telecharger la derniere release
@@ -392,6 +392,207 @@ class SideBtn(tk.Frame):
         for ch in self.winfo_children():
             try: ch.config(bg=PANEL)
             except: pass
+
+
+# ================================================================
+#  AUTHENTIFICATION
+#  Code stocke sous forme de hash SHA-256 salte - impossible
+#  a trouver dans le code source meme en decompilant
+# ================================================================
+
+def _auth_check(code_input):
+    """Verifie le code saisi sans exposer le code original."""
+    import hashlib
+    # Hash SHA-256 avec salt du code correct
+    # Impossible de retrouver le code meme en lisant cette valeur
+    _expected = "61dcee57b8776f49e410d4892e726b241f18ac5b8899a9adc3cecd94fb2446c5"
+    _salt     = "fr_salt_v1_kakokix"
+    try:
+        _computed = hashlib.sha256((_salt + str(code_input)).encode()).hexdigest()
+        return _computed == _expected
+    except Exception:
+        return False
+
+def _show_auth_window():
+    """Fenetre d authentification bloquante avant l acces au logiciel."""
+    import tkinter as _tk
+
+    # Palette reprise de l app
+    _BG    = "#09090f"
+    _PANEL = "#0d0e16"
+    _CARD  = "#111320"
+    _CARD_H= "#161928"
+    _BD    = "#1a1d2e"
+    _A     = "#00e5b8"
+    _A_D   = "#001a14"
+    _RED   = "#e53935"
+    _WHITE = "#eef0ff"
+    _T1    = "#b8c0d8"
+    _T2    = "#4a5270"
+    _T3    = "#222840"
+    _P1    = "#0c0e1a"
+
+    import tkinter.font as _tkf
+    def _detect():
+        try:
+            r = _tk.Tk(); r.withdraw()
+            fams = _tkf.families(r); r.destroy()
+            for f in ["Bahnschrift","Rajdhani","Segoe UI"]:
+                if f in fams: return f
+        except: pass
+        return "Segoe UI"
+    _F = _detect()
+
+    root = _tk.Tk()
+    root.overrideredirect(True)
+    root.configure(bg=_BG)
+    try: ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except: pass
+
+    _result = {"ok": False, "attempts": 0, "drag_x": 0, "drag_y": 0}
+
+    def _on_drag_start(e):
+        _result["drag_x"] = e.x_root - root.winfo_x()
+        _result["drag_y"] = e.y_root - root.winfo_y()
+    def _on_drag(e):
+        root.geometry("+{}+{}".format(
+            e.x_root - _result["drag_x"], e.y_root - _result["drag_y"]))
+
+    # Bordure externe accent
+    outer = _tk.Frame(root, bg=_A)
+    outer.pack(fill="both", expand=True, padx=1, pady=1)
+
+    # Fond CARD
+    main = _tk.Frame(outer, bg=_CARD)
+    main.pack(fill="both", expand=True)
+
+    # ── Topbar custom ──
+    top = _tk.Frame(main, bg=_PANEL, height=36)
+    top.pack(fill="x"); top.pack_propagate(False)
+    top.bind("<ButtonPress-1>", _on_drag_start)
+    top.bind("<B1-Motion>", _on_drag)
+
+    _tk.Label(top, text="  FRAME REPUBLIC  /  AUTHENTIFICATION",
+              font=(_F, 9, "bold"), bg=_PANEL, fg=_WHITE).pack(side="left", padx=12)
+
+    def _cancel():
+        root.destroy()
+        sys.exit(0)
+
+    close_b = _tk.Label(top, text="  x  ", font=(_F, 10, "bold"),
+                         bg=_PANEL, fg=_T2, cursor="hand2")
+    close_b.pack(side="right")
+    close_b.bind("<Enter>", lambda e: close_b.config(bg=_RED, fg=_WHITE))
+    close_b.bind("<Leave>", lambda e: close_b.config(bg=_PANEL, fg=_T2))
+    close_b.bind("<Button-1>", lambda e: _cancel())
+
+    # Separateur accent
+    _tk.Frame(main, bg=_A, height=1).pack(fill="x")
+
+    # ── Corps ──
+    body = _tk.Frame(main, bg=_CARD, padx=36, pady=28)
+    body.pack(fill="both", expand=True)
+
+    # Logo hexagone
+    import math as _m
+    hx = _tk.Canvas(body, width=64, height=64, bg=_CARD, highlightthickness=0)
+    hx.pack(pady=(0,8))
+    _pts = []
+    for i in range(6):
+        _a = _m.radians(60*i - 30)
+        _pts += [32 + 28*_m.cos(_a), 32 + 28*_m.sin(_a)]
+    hx.create_polygon(*_pts, fill=_A_D, outline=_A, width=2)
+    hx.create_text(32, 32, text="FR", fill=_A, font=(_F, 14, "bold"))
+
+    _tk.Label(body, text="ACCES SECURISE",
+              font=(_F, 14, "bold"), bg=_CARD, fg=_WHITE).pack(pady=(4,2))
+    _tk.Label(body, text="Entrez le code d activation",
+              font=(_F, 9), bg=_CARD, fg=_T2).pack(pady=(0,16))
+
+    # Champ de saisie
+    entry_frame = _tk.Frame(body, bg=_P1,
+                             highlightthickness=1, highlightbackground=_BD)
+    entry_frame.pack(fill="x", pady=(0,6))
+
+    entry = _tk.Entry(entry_frame, bg=_P1, fg=_A, font=("Consolas", 12, "bold"),
+                       insertbackground=_A, relief="flat", show="*",
+                       justify="center")
+    entry.pack(fill="x", padx=12, pady=10, ipady=4)
+    entry.focus_set()
+
+    # Message erreur
+    error_lbl = _tk.Label(body, text="", font=(_F, 8),
+                           bg=_CARD, fg=_RED, height=1)
+    error_lbl.pack(fill="x", pady=(4,12))
+
+    def _validate(_=None):
+        code = entry.get().strip()
+        if not code:
+            error_lbl.config(text="Veuillez entrer un code")
+            return
+
+        if _auth_check(code):
+            _result["ok"] = True
+            # Petit effet visuel de validation
+            ok_lbl = _tk.Label(body, text="  ACCES AUTORISE  ",
+                                font=(_F, 10, "bold"),
+                                bg=_A, fg=_BG, padx=8, pady=4)
+            ok_lbl.pack(pady=4)
+            root.update()
+            import time as _t; _t.sleep(0.6)
+            root.destroy()
+        else:
+            _result["attempts"] += 1
+            entry.delete(0, "end")
+
+            if _result["attempts"] >= 5:
+                error_lbl.config(text="Trop de tentatives. Fermeture...")
+                root.update()
+                import time as _t; _t.sleep(1.5)
+                root.destroy()
+                sys.exit(0)
+            else:
+                remaining = 5 - _result["attempts"]
+                error_lbl.config(
+                    text="Code incorrect ({} tentative{} restante{})".format(
+                        remaining, "s" if remaining>1 else "",
+                        "s" if remaining>1 else ""))
+
+                # Effet shake
+                orig_x = root.winfo_x()
+                for dx in [10, -20, 18, -16, 10, -8, 4, 0]:
+                    root.geometry("+{}+{}".format(orig_x + dx, root.winfo_y()))
+                    root.update(); import time as _t; _t.sleep(0.025)
+
+    entry.bind("<Return>", _validate)
+
+    # Bouton valider
+    btn = _tk.Label(body, text="  Valider le code  ",
+                     font=(_F, 10, "bold"),
+                     bg=_A_D, fg=_A, cursor="hand2", padx=14, pady=8,
+                     highlightthickness=1, highlightbackground=_A)
+    btn.pack(fill="x", pady=(4,4))
+    btn.bind("<Enter>", lambda e: btn.config(bg=_A, fg=_BG))
+    btn.bind("<Leave>", lambda e: btn.config(bg=_A_D, fg=_A))
+    btn.bind("<Button-1>", lambda e: _validate())
+
+    # Lien discret
+    _tk.Label(body,
+              text="Contactez l administrateur si vous n avez pas de code",
+              font=(_F, 7), bg=_CARD, fg=_T3).pack(pady=(8,0))
+
+    # Centrer
+    root.update_idletasks()
+    w, h = 380, 420
+    x = (root.winfo_screenwidth() - w) // 2
+    y = (root.winfo_screenheight() - h) // 2
+    root.geometry("{}x{}+{}+{}".format(w, h, x, y))
+
+    root.mainloop()
+
+    if not _result["ok"]:
+        sys.exit(0)
+
 
 # ================================================================
 #  APPLICATION
@@ -3947,4 +4148,6 @@ class App(tk.Tk):
 if __name__ == "__main__":
     try: ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except: pass
+    # Authentification obligatoire avant acces au logiciel
+    _show_auth_window()
     App().mainloop()
