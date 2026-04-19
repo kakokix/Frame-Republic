@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-VERSION     = "1.1.0"
+VERSION     = "1.1.3"
 VERSION_URL = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/version.json"
 UPDATE_URL  = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py"
 # Pour les .exe compiles: telecharger la derniere release
@@ -123,27 +123,38 @@ def write_save(data):
 # ================================================================
 #  PALETTE  LOW-POLY DARK
 # ================================================================
-BG      = "#09090f"   # fond principal
-PANEL   = "#0d0e16"   # sidebar / topbar
-CARD    = "#111320"   # carte
-CARD_H  = "#161928"   # carte hover
-BD      = "#1a1d2e"   # bordure normale
-BD_A    = "#2a3050"   # bordure active
-A       = "#00e5b8"   # accent cyan-vert
-A2      = "#00b890"   # accent2
-A_D     = "#001a14"   # accent tres fonce
-BLUE    = "#2979ff"
-ORANGE  = "#ff6d00"
-RED     = "#e53935"
-YELLOW  = "#fdd835"
-PURPLE  = "#7c4dff"
-WHITE   = "#eef0ff"
-T1      = "#b8c0d8"   # texte principal
-T2      = "#4a5270"   # texte secondaire
-T3      = "#222840"   # texte tres fonce
-P1      = "#0c0e1a"   # poly fonce
-P2      = "#0f1220"   # poly moyen
-P3      = "#131628"   # poly clair
+# ═══ PALETTE EXACTE DU SITE frame-republic.netlify.app ═══
+# Variables CSS du site reproduites fidelement
+BG      = "#07070b"   # --bg (fond principal)
+PANEL   = "#0f0f17"   # --bg-elev (topbar, sidebar)
+CARD    = "#12121d"   # --bg-card (cartes)
+CARD_H  = "#171724"   # --bg-card-2 (hover cartes)
+CARD_3  = "#1c1c2b"   # --bg-card-3 (cartes fonce)
+BD      = "#1f1f2e"   # --line (bordures)
+BD_A    = "#2a2a3d"   # --line-hot (bordures actives)
+BD_H    = "#3a3a54"   # --line-hotter (bordures hot)
+A       = "#ff2d55"   # --accent (ROUGE/ROSE principal)
+A2      = "#ff5577"   # --accent-hot (accent hover)
+A_D     = "#c0203f"   # --accent-deep (accent fonce)
+A_BG    = "#1a0814"   # fond teinte accent
+YELLOW2 = "#ffd60a"   # --accent-2 (jaune secondaire)
+GOOD    = "#00e676"   # --good (vert)
+BAD     = "#ff5c5c"   # --bad (rouge erreur)
+BLUE    = "#38bdf8"   # --info
+RED     = "#ff5c5c"   # --bad
+ORANGE  = "#ff8c00"
+YELLOW  = "#ffd60a"
+PURPLE  = "#a78bfa"
+WHITE   = "#f4f4f7"   # --text (blanc casse)
+T1      = "#c3c3d1"   # --text-dim (texte secondaire)
+T2      = "#8a8aa0"   # --muted
+T3      = "#6a6a80"   # --muted-2
+P1      = "#0a0a12"   # fond plus sombre
+P2      = "#0d0d18"   # poly moyen
+P3      = "#131322"   # poly clair
+NV_G    = "#76b900"   # NVIDIA green
+AM_R    = "#ed1c24"   # AMD red
+IN_B    = "#0071c5"   # Intel blue
 
 # Police principale - detection automatique
 # Bahnschrift = Windows 10/11 natif, geometrique, futuriste
@@ -414,23 +425,45 @@ def _auth_check(code_input):
         return False
 
 def _show_auth_window():
-    """Fenetre d authentification bloquante avant l acces au logiciel."""
+    """Fenetre d authentification bloquante avant l acces au logiciel.
+    Sauvegarde un jeton chiffre apres validation reussie - plus besoin
+    de retaper le code aux prochains lancements."""
     import tkinter as _tk
+    import hashlib as _hl
+    import os as _os
+    import json as _js
 
-    # Palette reprise de l app
-    _BG    = "#09090f"
-    _PANEL = "#0d0e16"
-    _CARD  = "#111320"
-    _CARD_H= "#161928"
-    _BD    = "#1a1d2e"
-    _A     = "#00e5b8"
-    _A_D   = "#001a14"
-    _RED   = "#e53935"
-    _WHITE = "#eef0ff"
-    _T1    = "#b8c0d8"
-    _T2    = "#4a5270"
-    _T3    = "#222840"
-    _P1    = "#0c0e1a"
+    # Verifier si deja authentifie
+    _save_dir = _os.path.join(_os.environ.get("APPDATA",""), "FrameRepublic")
+    _save_path = _os.path.join(_save_dir, "save.json")
+    try:
+        with open(_save_path, "r", encoding="utf-8") as _f:
+            _data = _js.load(_f)
+        # Jeton = hash du hash stocke + identifiant machine
+        _expected_token = _hl.sha256(
+            ("61dcee57b8776f49e410d4892e726b241f18ac5b8899a9adc3cecd94fb2446c5"
+             + _os.environ.get("COMPUTERNAME","")
+             + _os.environ.get("USERNAME","")).encode()).hexdigest()
+        if _data.get("_auth_token") == _expected_token:
+            return  # Deja authentifie - skip la fenetre
+    except Exception:
+        pass
+
+    # Palette EXACTE du site frame-republic.netlify.app
+    _BG    = "#07070b"     # --bg
+    _PANEL = "#0f0f17"     # --bg-elev
+    _CARD  = "#12121d"     # --bg-card
+    _CARD_H= "#171724"     # --bg-card-2
+    _BD    = "#1f1f2e"     # --line
+    _A     = "#ff2d55"     # --accent (ROUGE exact du site)
+    _A_D   = "#c0203f"     # --accent-deep
+    _RED   = "#ff5c5c"     # --bad
+    _WHITE = "#f4f4f7"     # --text
+    _T1    = "#c3c3d1"     # --text-dim
+    _T2    = "#8a8aa0"     # --muted
+    _T3    = "#6a6a80"     # --muted-2
+    _P1    = "#0a0a12"     # plus sombre
+    _GOOD  = "#00e676"     # --good (vert validation)
 
     import tkinter.font as _tkf
     def _detect():
@@ -472,7 +505,7 @@ def _show_auth_window():
     top.bind("<ButtonPress-1>", _on_drag_start)
     top.bind("<B1-Motion>", _on_drag)
 
-    _tk.Label(top, text="  FRAME REPUBLIC  /  AUTHENTIFICATION",
+    _tk.Label(top, text="  Frame Republic  /  Acces securise",
               font=(_F, 9, "bold"), bg=_PANEL, fg=_WHITE).pack(side="left", padx=12)
 
     def _cancel():
@@ -493,26 +526,32 @@ def _show_auth_window():
     body = _tk.Frame(main, bg=_CARD, padx=36, pady=28)
     body.pack(fill="both", expand=True)
 
-    # Logo hexagone
-    import math as _m
-    hx = _tk.Canvas(body, width=64, height=64, bg=_CARD, highlightthickness=0)
-    hx.pack(pady=(0,8))
-    _pts = []
-    for i in range(6):
-        _a = _m.radians(60*i - 30)
-        _pts += [32 + 28*_m.cos(_a), 32 + 28*_m.sin(_a)]
-    hx.create_polygon(*_pts, fill=_A_D, outline=_A, width=2)
-    hx.create_text(32, 32, text="FR", fill=_A, font=(_F, 14, "bold"))
+    # Logo rectangle arrondi gradient rouge (taille auth: 72px)
+    _LS = 72
+    lg = _tk.Canvas(body, width=_LS, height=_LS, bg=_CARD, highlightthickness=0)
+    lg.pack(pady=8)
+    _r = 16
+    lg.create_rectangle(_r, 0, _LS-_r, _LS, fill=_A, outline="")
+    lg.create_rectangle(0, _r, _LS, _LS-_r, fill=_A, outline="")
+    lg.create_arc(0, 0, 2*_r, 2*_r, start=90, extent=90, fill=_A, outline="")
+    lg.create_arc(_LS-2*_r, 0, _LS, 2*_r, start=0, extent=90, fill=_A, outline="")
+    lg.create_arc(0, _LS-2*_r, 2*_r, _LS, start=180, extent=90, fill=_A, outline="")
+    lg.create_arc(_LS-2*_r, _LS-2*_r, _LS, _LS, start=270, extent=90, fill=_A, outline="")
+    # Gradient overlay
+    lg.create_polygon(_LS, 0, _LS, _LS, 0, _LS,
+                      fill="#c0203f", outline="", stipple="gray25")
+    # F blanc bold
+    lg.create_text(_LS/2, _LS/2, text="F", fill=_WHITE, font=(_F, 38, "bold"))
 
     _tk.Label(body, text="ACCES SECURISE",
-              font=(_F, 14, "bold"), bg=_CARD, fg=_WHITE).pack(pady=(4,2))
+              font=(_F, 14, "bold"), bg=_CARD, fg=_WHITE).pack(pady=4)
     _tk.Label(body, text="Entrez le code d activation",
-              font=(_F, 9), bg=_CARD, fg=_T2).pack(pady=(0,16))
+              font=(_F, 9), bg=_CARD, fg=_T2).pack(pady=0)
 
     # Champ de saisie
     entry_frame = _tk.Frame(body, bg=_P1,
                              highlightthickness=1, highlightbackground=_BD)
-    entry_frame.pack(fill="x", pady=(0,6))
+    entry_frame.pack(fill="x", pady=0)
 
     entry = _tk.Entry(entry_frame, bg=_P1, fg=_A, font=("Consolas", 12, "bold"),
                        insertbackground=_A, relief="flat", show="*",
@@ -523,7 +562,7 @@ def _show_auth_window():
     # Message erreur
     error_lbl = _tk.Label(body, text="", font=(_F, 8),
                            bg=_CARD, fg=_RED, height=1)
-    error_lbl.pack(fill="x", pady=(4,12))
+    error_lbl.pack(fill="x", pady=4)
 
     def _validate(_=None):
         code = entry.get().strip()
@@ -533,10 +572,31 @@ def _show_auth_window():
 
         if _auth_check(code):
             _result["ok"] = True
-            # Petit effet visuel de validation
+            # Sauvegarder le jeton pour eviter de redemander le code
+            try:
+                _save_dir = _os.path.join(_os.environ.get("APPDATA",""),
+                                           "FrameRepublic")
+                _save_path = _os.path.join(_save_dir, "save.json")
+                _os.makedirs(_save_dir, exist_ok=True)
+                _token = _hl.sha256(
+                    ("61dcee57b8776f49e410d4892e726b241f18ac5b8899a9adc3cecd94fb2446c5"
+                     + _os.environ.get("COMPUTERNAME","")
+                     + _os.environ.get("USERNAME","")).encode()).hexdigest()
+                try:
+                    with open(_save_path, "r", encoding="utf-8") as _f:
+                        _data = _js.load(_f)
+                except Exception:
+                    _data = {}
+                _data["_auth_token"] = _token
+                with open(_save_path, "w", encoding="utf-8") as _f:
+                    _js.dump(_data, _f, indent=2)
+            except Exception:
+                pass
+
+            # Petit effet visuel de validation - vert #00e676 du site
             ok_lbl = _tk.Label(body, text="  ACCES AUTORISE  ",
                                 font=(_F, 10, "bold"),
-                                bg=_A, fg=_BG, padx=8, pady=4)
+                                bg=_GOOD, fg=_BG, padx=12, pady=6)
             ok_lbl.pack(pady=4)
             root.update()
             import time as _t; _t.sleep(0.6)
@@ -571,7 +631,7 @@ def _show_auth_window():
                      font=(_F, 10, "bold"),
                      bg=_A_D, fg=_A, cursor="hand2", padx=14, pady=8,
                      highlightthickness=1, highlightbackground=_A)
-    btn.pack(fill="x", pady=(4,4))
+    btn.pack(fill="x", pady=4)
     btn.bind("<Enter>", lambda e: btn.config(bg=_A, fg=_BG))
     btn.bind("<Leave>", lambda e: btn.config(bg=_A_D, fg=_A))
     btn.bind("<Button-1>", lambda e: _validate())
@@ -579,7 +639,7 @@ def _show_auth_window():
     # Lien discret
     _tk.Label(body,
               text="Contactez l administrateur si vous n avez pas de code",
-              font=(_F, 7), bg=_CARD, fg=_T3).pack(pady=(8,0))
+              font=(_F, 7), bg=_CARD, fg=_T3).pack(pady=8)
 
     # Centrer
     root.update_idletasks()
@@ -1254,23 +1314,37 @@ class App(tk.Tk):
             w.bind("<B1-Motion>",       self._drag_move)
             w.bind("<Double-Button-1>", self._toggle_max)
 
-        # Logo hexagone
+        # Logo rectangle arrondi gradient rouge + F blanc (site exact)
         logo = tk.Frame(bar, bg=PANEL)
-        logo.place(x=12, rely=0.5, anchor="w")
-        hx = tk.Canvas(logo, width=28, height=28, bg=PANEL, highlightthickness=0)
-        hx.pack(side="left")
-        pts = []
-        for i in range(6):
-            a = math.radians(60*i-30); pts += [14+12*math.cos(a), 14+12*math.sin(a)]
-        hx.create_polygon(*pts, fill=A_D, outline=A, width=1)
-        hx.create_text(14,14, text="FR", fill=A, font=(_FONT,8,"bold"))
+        logo.place(x=16, rely=0.5, anchor="w")
+        # Taille 34x34 comme le site (.brand-mark)
+        LS = 34
+        lg = tk.Canvas(logo, width=LS, height=LS, bg=PANEL, highlightthickness=0)
+        lg.pack(side="left")
+        # Simuler gradient 135deg avec 3 polygones superposes
+        # Coins arrondis r=8 comme le site (border-radius: 8px)
+        r = 8
+        # Base rectangle avec arcs aux 4 coins
+        lg.create_rectangle(r, 0, LS-r, LS, fill=A, outline="")
+        lg.create_rectangle(0, r, LS, LS-r, fill=A, outline="")
+        lg.create_arc(0, 0, 2*r, 2*r, start=90, extent=90, fill=A, outline="")
+        lg.create_arc(LS-2*r, 0, LS, 2*r, start=0, extent=90, fill=A, outline="")
+        lg.create_arc(0, LS-2*r, 2*r, LS, start=180, extent=90, fill=A, outline="")
+        lg.create_arc(LS-2*r, LS-2*r, LS, LS, start=270, extent=90, fill=A, outline="")
+        # Effet gradient: overlay diagonal plus fonce en bas-droite
+        lg.create_polygon(LS, 0, LS, LS, 0, LS,
+                          fill=A_D, outline="", stipple="gray25")
+        # Le F blanc - path SVG du site: M4 4h16v5h-11v3h9v5h-9v7H4z
+        # Stroke 2.5 simule avec du texte bold
+        lg.create_text(LS/2, LS/2, text="F", fill=WHITE,
+                        font=(_FONT, 18, "bold"))
         for w in (hx, logo):
             w.bind("<ButtonPress-1>", self._drag_start)
             w.bind("<B1-Motion>",     self._drag_move)
 
-        tk.Label(logo, text="  FRAME REPUBLIC", font=(_FONT,12,"bold"),
+        tk.Label(logo, text="  Frame Republic", font=(_FONT,13,"bold"),
                  bg=PANEL, fg=WHITE).pack(side="left")
-        tk.Label(logo, text="  PC Optimizer", font=F_SMALL,
+        tk.Label(logo, text="   L optimiseur PC gaming", font=F_SMALL,
                  bg=PANEL, fg=T2).pack(side="left")
 
         # Boutons fenetre
