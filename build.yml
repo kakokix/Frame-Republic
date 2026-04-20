@@ -1,0 +1,32 @@
+name: Build EXE
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Installer dependances
+      run: pip install pyinstaller psutil pillow
+
+    - name: Compiler EXE avec icone
+      run: pyinstaller --onefile --windowed --name FrameRepublic --icon=frame_republic.ico --add-data "frame_republic.ico;." frame_republic.py
+
+    - name: Publier la release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ github.run_number }}
+        name: Frame Republic v${{ github.run_number }}
+        files: |
+          dist/FrameRepublic.exe
+          frame_republic.ico
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
