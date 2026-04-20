@@ -1403,7 +1403,7 @@ class App(tk.Tk):
         # Stroke 2.5 simule avec du texte bold
         lg.create_text(LS/2, LS/2, text="F", fill=WHITE,
                         font=(_FONT, 18, "bold"))
-        for w in (hx, logo):
+        for w in (lg, logo):
             w.bind("<ButtonPress-1>", self._drag_start)
             w.bind("<B1-Motion>",     self._drag_move)
 
