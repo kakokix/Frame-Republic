@@ -1,5 +1,5 @@
 {
-  "version": "1.1.6",
+  "version": "1.1.7",
   "url": "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py",
-  "notes": "Icone F rouge (site), boutons primary/ghost, typo alignee, fix crash auth"
+  "notes": "Fix bug crash logo + design boost: score card premium, stat cards hover, onglets letter-spacing, bouton Optimiser rouge plein"
 }
