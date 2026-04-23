@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-VERSION     = "1.1.6"
+VERSION     = "1.1.7"
 VERSION_URL = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/version.json"
 UPDATE_URL  = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py"
 # Pour les .exe compiles: telecharger la derniere release
@@ -1368,11 +1368,13 @@ class App(tk.Tk):
         bar.grid_propagate(False)
         parent.grid_columnconfigure(0, weight=1)
 
-        # Canvas low-poly dans la topbar
+        # Canvas avec gradient glow rouge subtil (style site)
         cv = tk.Canvas(bar, bg=PANEL, highlightthickness=0)
         cv.place(relx=0, rely=0, relwidth=1, relheight=1)
-        cv.create_polygon(0,0,220,0,0,44, fill=P3, outline="")
-        cv.create_polygon(220,0,380,0,0,44, fill=P2, outline="")
+        # Ligne accent rouge tres fine en bas (site: border-bottom)
+        cv.create_line(0, 43, 2000, 43, fill=BD, width=1)
+        # Zone glow discrete en haut gauche (triangle subtil)
+        cv.create_polygon(0,0,180,0,0,44, fill=P3, outline="")
 
         for w in (bar, cv):
             w.bind("<ButtonPress-1>",   self._drag_start)
@@ -1563,20 +1565,35 @@ class App(tk.Tk):
             for i, (lw, ul) in enumerate(items):
                 a = (i == idx)
                 lw.config(fg=WHITE if a else T2,
-                           font=((_FONT,9,"bold") if a else F_TINY))
+                           font=(_FONT_TITLE, 9, "bold"))
                 ul.config(bg=A if a else PANEL)
             frames[idx].lift()
 
         for i, lbl in enumerate(labels):
             col = tk.Frame(bar, bg=PANEL); col.pack(side="left")
-            lw  = tk.Label(col, text=lbl.upper(),
-                           font=(_FONT,9,"bold") if i==0 else F_TINY,
-                           bg=PANEL, fg=WHITE if i==0 else T2,
-                           padx=14, pady=9, cursor="hand2")
+            # Ajouter des espaces pour simuler le letter-spacing du site
+            display = "  " + lbl.upper() + "  "
+            lw  = tk.Label(col, text=display,
+                           font=(_FONT_TITLE, 9, "bold"),
+                           bg=PANEL,
+                           fg=WHITE if i==0 else T2,
+                           padx=16, pady=11, cursor="hand2")
             lw.pack()
+            # Trait rouge sous l onglet actif (comme le site .nav-links.active)
             ul = tk.Frame(col, bg=A if i==0 else PANEL, height=2)
             ul.pack(fill="x")
             items.append((lw, ul))
+
+            # Hover effet sur les inactifs
+            def _h_enter(e, w=lw, idx=i, ul_=ul):
+                if ul_.cget("bg") != A:  # si pas actif
+                    w.config(fg=T1)
+            def _h_leave(e, w=lw, idx=i, ul_=ul):
+                if ul_.cget("bg") != A:
+                    w.config(fg=T2)
+            lw.bind("<Enter>", _h_enter)
+            lw.bind("<Leave>", _h_leave)
+
             f = tk.Frame(area, bg=BG)
             f.place(relx=0, rely=0, relwidth=1, relheight=1)
             frames[i] = f
@@ -1701,20 +1718,46 @@ class App(tk.Tk):
         # --- Ligne haute ---
         row1 = tk.Frame(body, bg=BG); row1.pack(fill="x", padx=18, pady=14)
 
-        # Score
-        sc_f = tk.Frame(row1, bg=CARD, highlightthickness=1, highlightbackground=BD)
+        # ───── SCORE CARD (style site premium) ─────
+        sc_f = tk.Frame(row1, bg=CARD,
+                        highlightthickness=1, highlightbackground=BD_A)
         sc_f.pack(side="left", fill="y", padx=0)
-        sc_cv = tk.Canvas(sc_f, width=130, height=120, bg=CARD, highlightthickness=0)
+
+        # Header avec label SCORE
+        hdr_sc = tk.Frame(sc_f, bg=PANEL, height=22)
+        hdr_sc.pack(fill="x"); hdr_sc.pack_propagate(False)
+        tk.Label(hdr_sc, text="  SCORE  SYSTEME",
+                 font=(_FONT_TITLE, 8, "bold"),
+                 bg=PANEL, fg=A).pack(side="left", padx=10)
+        # Dot live
+        dot = tk.Canvas(hdr_sc, width=8, height=8,
+                         bg=PANEL, highlightthickness=0)
+        dot.pack(side="right", padx=10)
+        dot.create_oval(0,0,8,8, fill=GOOD, outline="")
+
+        tk.Frame(sc_f, bg=A, height=1).pack(fill="x")
+
+        # Canvas principal avec glow rouge
+        sc_cv = tk.Canvas(sc_f, width=150, height=120,
+                           bg=CARD, highlightthickness=0)
         sc_cv.pack()
-        sc_cv.create_polygon(0,0,130,0,0,55, fill=A_D, outline="")
-        sc_cv.create_polygon(130,120,0,120,130,65, fill=A_D, outline="")
-        self._score_lbl = tk.Label(sc_f, text="--", font=F_SCORE, bg=CARD, fg=A)
-        self._score_lbl.place(in_=sc_cv, relx=0.5, rely=0.36, anchor="center")
-        tk.Label(sc_f, text="/ 100", font=F_TINY, bg=CARD, fg=T3).place(
-            in_=sc_cv, relx=0.5, rely=0.66, anchor="center")
-        self._score_sub = tk.Label(sc_f, text="Calcul...",
-                                    font=(_FONT,8,"bold"), bg=CARD, fg=A2)
-        self._score_sub.place(in_=sc_cv, relx=0.5, rely=0.88, anchor="center")
+        # Background radial glow simule (degraded polygons)
+        sc_cv.create_polygon(0,0,75,0,0,60, fill=A_BG, outline="")
+        sc_cv.create_polygon(150,120,75,120,150,60, fill=A_BG, outline="")
+        # Triangle accent haut-droite (style carte site)
+        sc_cv.create_polygon(130,0,150,0,150,20, fill=A, outline="")
+
+        self._score_lbl = tk.Label(sc_f, text="--",
+                                    font=(_FONT_TITLE, 44, "bold"),
+                                    bg=CARD, fg=A)
+        self._score_lbl.place(in_=sc_cv, relx=0.5, rely=0.38, anchor="center")
+        tk.Label(sc_f, text="/ 100", font=F_TINY,
+                 bg=CARD, fg=T3).place(in_=sc_cv, relx=0.5, rely=0.68,
+                                        anchor="center")
+        self._score_sub = tk.Label(sc_f, text="CALCUL...",
+                                    font=(_FONT_TITLE, 8, "bold"),
+                                    bg=CARD, fg=A2)
+        self._score_sub.place(in_=sc_cv, relx=0.5, rely=0.9, anchor="center")
 
         # Jauges
         gf = tk.Frame(row1, bg=BG); gf.pack(side="left", padx=8)
@@ -1813,16 +1856,38 @@ class App(tk.Tk):
                  ("net_up","UL",A),("uptime","Uptime",BLUE),
                  ("bat","Batterie",BLUE),("cpu_info","CPU",WHITE)]
         for i,(key,lbl,col) in enumerate(stats):
-            c = tk.Frame(sc2, bg=CARD, highlightthickness=1, highlightbackground=BD)
-            c.grid(row=0, column=i, padx=4, sticky="nsew"); sc2.columnconfigure(i, weight=1)
-            # Triangle deco
-            tri = tk.Canvas(c, width=20,height=14, bg=CARD, highlightthickness=0)
+            c = tk.Frame(sc2, bg=CARD,
+                         highlightthickness=1, highlightbackground=BD)
+            c.grid(row=0, column=i, padx=4, sticky="nsew")
+            sc2.columnconfigure(i, weight=1)
+
+            # Triangle accent avec glow teinte
+            tri = tk.Canvas(c, width=22, height=16,
+                             bg=CARD, highlightthickness=0)
             tri.pack(anchor="ne")
-            tri.create_polygon(20,0,20,14,6,0, fill=A_D, outline="")
-            ci = tk.Frame(c, bg=CARD, padx=8, pady=6); ci.pack(fill="both")
-            tk.Label(ci, text=lbl, font=F_TINY, bg=CARD, fg=T3).pack(anchor="w")
-            v = tk.Label(ci, text="--", font=(_FONT,10,"bold"), bg=CARD, fg=col)
-            v.pack(anchor="w"); self._stat_lbls[key] = v
+            tri.create_polygon(22,0,22,16,8,0, fill=A_BG, outline="")
+            tri.create_polygon(22,0,22,8,14,0, fill=A, outline="")
+
+            ci = tk.Frame(c, bg=CARD, padx=10, pady=8)
+            ci.pack(fill="both")
+
+            # Label en Oswald-like uppercase (style site)
+            tk.Label(ci, text=lbl.upper(),
+                     font=(_FONT_TITLE, 7, "bold"),
+                     bg=CARD, fg=T3).pack(anchor="w")
+
+            # Valeur plus grosse et premium
+            v = tk.Label(ci, text="--",
+                          font=(_FONT_TITLE, 12, "bold"),
+                          bg=CARD, fg=col)
+            v.pack(anchor="w", pady=1)
+            self._stat_lbls[key] = v
+
+            # Hover effect - bordure accent
+            def _h_in(e, w=c):  w.config(highlightbackground=A)
+            def _h_out(e, w=c): w.config(highlightbackground=BD)
+            c.bind("<Enter>", _h_in)
+            c.bind("<Leave>", _h_out)
 
         # ── AUTO-OPTIMIZE PANEL ──────────────────────────────────────
         ao_frame = tk.Frame(body, bg=CARD,
@@ -1895,13 +1960,14 @@ class App(tk.Tk):
         self._ao_undo_btn.bind("<Leave>", lambda e: self._ao_undo_btn.config(bg=CARD, highlightbackground=BD, fg=T2))
         self._ao_undo_btn.bind("<Button-1>", lambda e: threading.Thread(target=self._ao_undo, daemon=True).start())
 
-        self._ao_btn = tk.Label(ao_btns, text="  Optimiser maintenant  ",
-                                 font=(_FONT,9,"bold"), bg=A_D, fg=A,
-                                 padx=14, pady=5, cursor="hand2",
-                                 highlightthickness=1, highlightbackground=A)
+        self._ao_btn = tk.Label(ao_btns, text="  OPTIMISER MAINTENANT  ",
+                                 font=(_FONT_TITLE, 10, "bold"),
+                                 bg=A, fg=WHITE,
+                                 padx=18, pady=8, cursor="hand2",
+                                 highlightthickness=0)
         self._ao_btn.pack(side="right")
-        self._ao_btn.bind("<Enter>", lambda e: self._ao_btn.config(bg=A, fg=BG))
-        self._ao_btn.bind("<Leave>", lambda e: self._ao_btn.config(bg=A_D, fg=A))
+        self._ao_btn.bind("<Enter>", lambda e: self._ao_btn.config(bg=A2))
+        self._ao_btn.bind("<Leave>", lambda e: self._ao_btn.config(bg=A))
         self._ao_btn.bind("<Button-1>", lambda e: threading.Thread(target=self._ao_run, daemon=True).start())
 
         # Variables d'etat AO
