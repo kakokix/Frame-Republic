@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.2.1",
   "url": "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py",
-  "notes": "Fix crash RoundBtn (delete sur widget invalide), draw sur Configure event, winfo_exists guards"
+  "notes": "Fix conflit self._w/self._h avec attributs internes tkinter (bug 188 pack_configure)"
 }
