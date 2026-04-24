@@ -1,5 +1,5 @@
 {
-  "version": "1.2.1",
+  "version": "1.2.2",
   "url": "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py",
-  "notes": "Fix conflit self._w/self._h avec attributs internes tkinter (bug 188 pack_configure)"
+  "notes": "Fix boutons invisibles dans les pages (dessin force via after 50ms + retry 200ms)"
 }
