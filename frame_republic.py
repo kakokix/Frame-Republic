@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-VERSION     = "1.2.1"
+VERSION     = "1.2.2"
 VERSION_URL = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/version.json"
 UPDATE_URL  = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py"
 # Pour les .exe compiles: telecharger la derniere release
@@ -365,19 +365,26 @@ class RoundBtn(tk.Canvas):
         self._ww = width
         self._hh = height
 
-        # Dessiner au premier <Configure> event (quand Tk est pret)
+        # Dessiner: 3 mecanismes pour garantir le rendu
         def _first_draw(e=None):
-            if not self._drawn:
+            if self._drawn: return
+            try:
+                if not self.winfo_exists(): return
                 self._drawn = True
-                try:
-                    self._draw(self._bg_normal, self._fg_normal, self._border)
-                except Exception: pass
+                self._draw(self._bg_normal, self._fg_normal, self._border)
+            except Exception:
+                self._drawn = False  # retry plus tard
 
-        self.bind("<Configure>",  _first_draw)
-        self.bind("<Map>",        _first_draw)  # quand la fenetre s affiche
-        self.bind("<Enter>",      self._on_enter)
-        self.bind("<Leave>",      self._on_leave)
-        self.bind("<Button-1>",   self._on_press)
+        self.bind("<Configure>", _first_draw)
+        self.bind("<Map>",       _first_draw)
+        # Force dessin via after(50) - fiable sur Windows
+        self.after(50, _first_draw)
+        # Re-essayer apres 200ms si toujours pas dessine
+        self.after(200, _first_draw)
+
+        self.bind("<Enter>",     self._on_enter)
+        self.bind("<Leave>",     self._on_leave)
+        self.bind("<Button-1>",  self._on_press)
         self.bind("<ButtonRelease-1>", self._on_release)
 
     def _draw(self, bg_color, fg_color, border_color):
