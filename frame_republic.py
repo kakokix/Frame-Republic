@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-VERSION     = "1.1.9"
+VERSION     = "1.2.0"
 VERSION_URL = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/version.json"
 UPDATE_URL  = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py"
 # Pour les .exe compiles: telecharger la derniere release
@@ -351,16 +351,33 @@ class RoundBtn(tk.Canvas):
             # Approx: 9px par char en font taille 9 + padx des 2 cotes
             width = len(text) * 7 + padx * 2
 
-        # bg du parent pour transparence simule
-        parent_bg = parent.cget("bg") if hasattr(parent, "cget") else BG
+        # Utiliser le BG du parent si possible, sinon BG par defaut
+        try:
+            parent_bg = parent.cget("bg")
+            # Valider que c'est une couleur valide #xxxxxx
+            if not parent_bg or not str(parent_bg).startswith("#"):
+                parent_bg = BG
+        except Exception:
+            parent_bg = BG
+
         super().__init__(parent, width=width, height=height,
                           bg=parent_bg, highlightthickness=0,
                           cursor="hand2", **kw)
 
         self._w = width
         self._h = height
-        self._draw(self._bg_normal, self._fg_normal, self._border)
+        self._drawn = False
 
+        # Dessiner au premier <Configure> event (quand Tk est pret)
+        def _first_draw(e=None):
+            if not self._drawn:
+                self._drawn = True
+                try:
+                    self._draw(self._bg_normal, self._fg_normal, self._border)
+                except Exception: pass
+
+        self.bind("<Configure>",  _first_draw)
+        self.bind("<Map>",        _first_draw)  # quand la fenetre s affiche
         self.bind("<Enter>",      self._on_enter)
         self.bind("<Leave>",      self._on_leave)
         self.bind("<Button-1>",   self._on_press)
@@ -368,7 +385,12 @@ class RoundBtn(tk.Canvas):
 
     def _draw(self, bg_color, fg_color, border_color):
         """Dessine le bouton arrondi."""
-        self.delete("all")
+        try:
+            if not self.winfo_exists():
+                return
+            self.delete("all")
+        except Exception:
+            return
         w, h = self._w, self._h
         r = self._radius
 
@@ -410,20 +432,32 @@ class RoundBtn(tk.Canvas):
                           font=(_FONT_TITLE, 9, "bold"))
 
     def _on_enter(self, e):
+        try:
+            if not self.winfo_exists(): return
+        except Exception: return
         self._hovered = True
         if not self._pressed:
             self._draw(self._bg_hover, self._fg_hover, self._border)
 
     def _on_leave(self, e):
+        try:
+            if not self.winfo_exists(): return
+        except Exception: return
         self._hovered = False
         self._pressed = False
         self._draw(self._bg_normal, self._fg_normal, self._border)
 
     def _on_press(self, e):
+        try:
+            if not self.winfo_exists(): return
+        except Exception: return
         self._pressed = True
         self._draw(self._bg_press, self._fg_hover, self._border)
 
     def _on_release(self, e):
+        try:
+            if not self.winfo_exists(): return
+        except Exception: return
         self._pressed = False
         if self._hovered:
             self._draw(self._bg_hover, self._fg_hover, self._border)
@@ -453,7 +487,10 @@ class Toggle(tk.Canvas):
             int(r1+(r2-r1)*t), int(g1+(g2-g1)*t), int(b1+(b2-b1)*t))
 
     def _draw(self):
-        self.delete("all")
+        try:
+            if not self.winfo_exists(): return
+            self.delete("all")
+        except Exception: return
         W,H,p = self.W,self.H,self._pos
         track = self._lerp(p)
         r = H//2
@@ -4597,8 +4634,12 @@ class App(tk.Tk):
             w = cv.winfo_width(); h = cv.winfo_height()
             if w < 10: self.after(80, self._particles_step); return
 
+            try:
+                if not cv.winfo_exists(): return
+            except Exception: return
             for p in self._particles:
-                cv.delete(p['tag'])
+                try: cv.delete(p['tag'])
+                except: pass
                 p['x'] += p['vx']; p['y'] += p['vy']
                 # Rebond sur les bords
                 if p['x'] < 0 or p['x'] > w: p['vx'] *= -1
