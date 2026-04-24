@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-VERSION     = "1.2.0"
+VERSION     = "1.2.1"
 VERSION_URL = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/version.json"
 UPDATE_URL  = "https://raw.githubusercontent.com/kakokix/Frame-Republic/main/frame_republic.py"
 # Pour les .exe compiles: telecharger la derniere release
@@ -321,23 +321,39 @@ class RoundBtn(tk.Canvas):
 
     def __init__(self, parent, text, command=None, primary=False,
                  width=None, height=36, radius=12, padx=20,
-                 color=None, **kw):
-        self._text = text
+                 color=None, parent_bg=None):
+
+        # Calculer largeur si pas fournie
+        if width is None:
+            width = len(str(text)) * 7 + padx * 2
+
+        # Couleur de fond (safe)
+        _bg = parent_bg if parent_bg else BG
+
+        # Appeler super().__init__ EN PREMIER avant tout autre code
+        tk.Canvas.__init__(self, parent,
+                            width=width, height=height,
+                            bg=_bg, highlightthickness=0,
+                            cursor="hand2")
+
+        # Maintenant on peut initialiser les attributs
+        self._text = str(text)
         self._cmd = command
         self._primary = primary
         self._radius = radius
         self._height = height
         self._hovered = False
         self._pressed = False
+        self._drawn = False
 
-        # Couleurs selon primary ou ghost (comme le site)
+        # Couleurs selon primary ou ghost
         if primary:
             self._bg_normal = color or A
             self._bg_hover  = A2
             self._bg_press  = A_D
             self._fg_normal = WHITE
             self._fg_hover  = WHITE
-            self._border    = None  # pas de bordure en primary
+            self._border    = None
         else:
             self._bg_normal = CARD
             self._bg_hover  = CARD_H
@@ -346,27 +362,8 @@ class RoundBtn(tk.Canvas):
             self._fg_hover  = color or A
             self._border    = BD
 
-        # Calculer largeur si pas fournie
-        if width is None:
-            # Approx: 9px par char en font taille 9 + padx des 2 cotes
-            width = len(text) * 7 + padx * 2
-
-        # Utiliser le BG du parent si possible, sinon BG par defaut
-        try:
-            parent_bg = parent.cget("bg")
-            # Valider que c'est une couleur valide #xxxxxx
-            if not parent_bg or not str(parent_bg).startswith("#"):
-                parent_bg = BG
-        except Exception:
-            parent_bg = BG
-
-        super().__init__(parent, width=width, height=height,
-                          bg=parent_bg, highlightthickness=0,
-                          cursor="hand2", **kw)
-
-        self._w = width
-        self._h = height
-        self._drawn = False
+        self._ww = width
+        self._hh = height
 
         # Dessiner au premier <Configure> event (quand Tk est pret)
         def _first_draw(e=None):
@@ -391,7 +388,7 @@ class RoundBtn(tk.Canvas):
             self.delete("all")
         except Exception:
             return
-        w, h = self._w, self._h
+        w, h = self._ww, self._hh
         r = self._radius
 
         # Dessiner rectangle arrondi (rounded rect via polygons + arcs)
